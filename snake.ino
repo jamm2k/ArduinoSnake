@@ -9,68 +9,224 @@
 
 LiquidCrystal lcd(12, 11, 5, 4, 3, 2);
 
-int board[BOARD_HEIGHT][BOARD_WIDTH];
+const int left_button = 6;
+const int right_button = 7;
 
-void setup() {
-  lcd.begin(16, 2);
-  Serial.begin(9600);
-  init_board();
-}
+const short MIN_DRAW_WAIT = 60;
 
-void init_board() {
-  for (int i = 0; i < BOARD_HEIGHT; i++) {
-    for (int j = 0; j < BOARD_WIDTH; j++) {
-      board[i][j] = 0;
-    }
-  }
+struct point_t {
+  char x;
+  char y;
+};
+
+struct snake_node_t {
+  struct snake_node_t *next;
+  struct snake_node_t *prev;
+  struct point_t pos;
+};
+
+enum Direction {
+  LEFT = 1,
+  DOWN = LEFT << 1,
+  RIGHT = LEFT << 2,
+  UP = LEFT << 3,
+};
+
+struct snake_node_t* snake_head;
+Direction curr_direction;
+struct point_t apple_pos;
+
+void generate_apple() {
+  apple_pos.x = random(BOARD_WIDTH);
+  apple_pos.y = 5;//random(BOARD_HEIGHT);
 }
 
 void init_character(byte* character) {
   for(int i = 0; i < SECTOR_HEIGHT; i++) {
-    // Add a zero byte to every row
-    character[i] = B00000;
+  // Add a zero byte to every row
+  character[i] = B00000;
   }
 }
 
-void sector_to_bytes(int start_x, int start_y, byte* character) {
-  init_character(character);
+struct snake_node_t* add_snake_part() {
+  struct snake_node_t* new_part = (struct snake_node_t*) malloc(sizeof(struct snake_node_t));
+  struct snake_node_t* last = snake_head->next;
+  snake_head->next = new_part;
+  last->prev = new_part;
+  new_part->next = last;
+  new_part->prev = snake_head;
+  return new_part;
+}
 
-  // Converts the sector to a character with bytes
-  for (int i = start_y; i < start_y + SECTOR_HEIGHT; i++) {
-    for (int j = start_x; j < start_x + SECTOR_WIDTH; j++) {
-      // If that cell is a 1, add it to the byte of the character
-      // by using a mask
-      if (board[i][j]) {
-        byte mask = 1 << j;
-        character[i] |= mask;
+
+void move_snake() {
+  struct point_t last_pos = snake_head->pos;
+  struct snake_node_t* curr_node = snake_head->prev;
+
+  //Move head
+  switch(curr_direction) {
+    case LEFT:
+      if(snake_head->pos.x == 0) {
+        snake_head->pos.x = BOARD_WIDTH - 1;
+      } else {
+        snake_head->pos.x--;
+      }
+      break;
+    case DOWN:
+      if(snake_head->pos.y == (BOARD_HEIGHT - 1)) {
+        snake_head->pos.y = 0;
+      } else {
+        snake_head->pos.y++;
+      }
+      break;
+    case RIGHT:
+      if(snake_head->pos.x == (BOARD_WIDTH - 1)) {
+        snake_head->pos.x = 0;
+      } else {
+        snake_head->pos.x++;
+      }
+      break;
+    case UP:
+      if(snake_head->pos.y == 0) {
+        snake_head->pos.y = BOARD_HEIGHT - 1;
+      } else {
+        snake_head->pos.y--;
+      }
+      break;
+  }
+
+  //Move body
+  while(curr_node != snake_head) {
+    struct point_t temp = curr_node->pos;
+    curr_node->pos = last_pos;
+    last_pos = temp;
+    curr_node = curr_node->prev;
+  }
+}
+
+void draw_snake() {
+  byte sectors[SECTORS_PER_ROW][SECTORS_PER_COLUMN][SECTOR_HEIGHT];
+  for(int i = 0; i < SECTORS_PER_COLUMN; i++) {
+    for(int j = 0; j < SECTORS_PER_ROW; j++) {
+      init_character(sectors[j][i]);
+    }
+  }
+
+  //Apple drawing
+  byte sec_x = apple_pos.x / SECTOR_WIDTH;
+  byte sec_y = apple_pos.y / SECTOR_HEIGHT;
+  sectors[sec_x][sec_y][apple_pos.y - (sec_y * SECTOR_HEIGHT)] |= (B10000 >> (apple_pos.x - (sec_x * SECTOR_WIDTH)));
+
+  struct snake_node_t* curr_node = snake_head;
+
+  do{
+    struct point_t p = curr_node->pos;
+    sec_x = p.x / SECTOR_WIDTH;
+    sec_y = p.y / SECTOR_HEIGHT;
+    sectors[sec_x][sec_y][p.y - (sec_y * SECTOR_HEIGHT)] |= (B10000 >> (p.x - (sec_x * SECTOR_WIDTH)));
+    curr_node = curr_node->prev;
+  }while(curr_node != snake_head);
+
+  byte curr_sec = 0;
+
+  for(int i = 0; i < SECTORS_PER_COLUMN; i++) {
+    for(int j = 0; j < SECTORS_PER_ROW; j++) {
+      bool draw_sec = false;
+      for(int k = 0; k < SECTOR_HEIGHT; k++) {
+        if(sectors[j][i][k]) {
+          draw_sec = true;
+          break;
+        }
+      }
+
+      if(draw_sec) {
+        lcd.createChar(curr_sec, sectors[j][i]);
+        lcd.setCursor(j, i);
+        lcd.write(byte(curr_sec));
+        curr_sec++;
+      } else {
+        lcd.setCursor(j, i);
+        lcd.write(" ");
       }
     }
   }
 }
 
-void draw() {
-  for(int i = 0; i < BOARD_HEIGHT; i += SECTOR_HEIGHT) {
-    for(int j = 0; j < BOARD_WIDTH; j += SECTOR_WIDTH) {
-      // The character represents rows with bytes
-      byte character[SECTOR_HEIGHT];
-      
-      sector_to_bytes(j, i, character);
-      lcd.createChar(0, character);
+void setup() {
+  pinMode(left_button, INPUT);
+  pinMode(right_button, INPUT);
+  randomSeed(analogRead(0));
+  byte character[SECTOR_HEIGHT];
+  lcd.begin(16, 2);
+  Serial.begin(9600);
+  snake_head = (struct snake_node_t*) malloc(sizeof(struct snake_node_t));
+  snake_head->pos.x = 5;
+  snake_head->pos.y = 5;
+  snake_head->prev = snake_head;
+  snake_head->next = snake_head;
+  struct snake_node_t* body1 = add_snake_part();
+  struct snake_node_t* body2 = add_snake_part();
+  body1->pos.x = 4;
+  body1->pos.y = 5;
+  body2->pos.x = 3;
+  body2->pos.y = 5;
+  curr_direction = RIGHT;
+  generate_apple();
+  draw_snake();
+}
 
-      // This function needs to be called, so that the new character can be used
-      lcd.home();
+bool left_button_state = false;
+bool right_button_state = false;
+bool left_just_pressed = false;
+bool right_just_pressed = false;
 
-      // lcd.home() sets the cursor to the top left, so we need to move it to
-      // where we want to draw
-      lcd.setCursor(j / SECTOR_WIDTH, i / SECTOR_HEIGHT);
+short time_since_last_draw = 0;
+unsigned long last_update = 0;
 
-      // Write the new character by saying to which place it
-      // was saved (the first argument of the lcd.createChar() function call
-      lcd.write(byte(0));
+
+void update_input() {
+  bool new_left_button_state = (bool)digitalRead(left_button);
+  bool new_right_button_state = (bool)digitalRead(right_button);
+
+  left_just_pressed = new_left_button_state && !left_button_state;
+  right_just_pressed = new_right_button_state && !right_button_state;
+
+  left_button_state = new_left_button_state;
+  right_button_state = new_right_button_state;
+}
+
+void handle_input() {
+  if(left_just_pressed) {
+    if(curr_direction == LEFT) {
+      curr_direction = UP;
+    } else {
+      curr_direction = curr_direction >> 1;
+    }
+  } else if (right_just_pressed) {
+    if(curr_direction == UP) {
+      curr_direction = LEFT;
+    } else {
+      curr_direction = curr_direction << 1;
     }
   }
 }
 
 void loop() {
-  draw();
+
+  // update_input();
+  // handle_input();
+
+  unsigned long time = millis();
+  unsigned long elapsed = time - last_update;
+  last_update = time;
+  time_since_last_draw += elapsed;
+  if(time_since_last_draw >= MIN_DRAW_WAIT) {
+    move_snake();
+    if(snake_head->pos.x == apple_pos.x && snake_head->pos.y == apple_pos.y) {
+      generate_apple();
+      add_snake_part();
+    }
+    draw_snake();
+    time_since_last_draw = 0;
+  }
 }
