@@ -213,8 +213,8 @@ void handle_input() {
 
 void loop() {
 
-  // update_input();
-  // handle_input();
+  update_input();
+  handle_input();
 
   unsigned long time = millis();
   unsigned long elapsed = time - last_update;
