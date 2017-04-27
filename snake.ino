@@ -38,7 +38,7 @@ struct point_t apple_pos;
 
 void generate_apple() {
   apple_pos.x = random(BOARD_WIDTH);
-  apple_pos.y = 5;//random(BOARD_HEIGHT);
+  apple_pos.y = random(BOARD_HEIGHT);
 }
 
 void init_character(byte* character) {
