@@ -14,6 +14,9 @@ const int right_button = 7;
 
 const short MIN_DRAW_WAIT = 60;
 
+unsigned long time_left;
+unsigned long time_right;
+
 struct point_t {
   char x;
   char y;
@@ -152,9 +155,10 @@ void draw_snake() {
   }
 }
 
+
 void setup() {
-  pinMode(left_button, INPUT);
-  pinMode(right_button, INPUT);
+  pinMode(left_button, INPUT_PULLUP);
+  pinMode(right_button, INPUT_PULLUP);
   randomSeed(analogRead(0));
   byte character[SECTOR_HEIGHT];
   lcd.begin(16, 2);
@@ -175,48 +179,55 @@ void setup() {
   draw_snake();
 }
 
-bool left_button_state = false;
-bool right_button_state = false;
-bool left_just_pressed = false;
-bool right_just_pressed = false;
+bool new_down_button_state = (bool)!digitalRead(left_button);
+bool new_up_button_state = (bool)!digitalRead(right_button);
 
 short time_since_last_draw = 0;
 unsigned long last_update = 0;
 
+bool left_pressed = false;
+bool right_pressed = false;
 
 void update_input() {
-  bool new_left_button_state = (bool)digitalRead(left_button);
-  bool new_right_button_state = (bool)digitalRead(right_button);
+  bool new_left_button_state = (bool)!digitalRead(left_button);
+  bool new_right_button_state = (bool)!digitalRead(right_button);
 
-  left_just_pressed = new_left_button_state && !left_button_state;
-  right_just_pressed = new_right_button_state && !right_button_state;
+  if(new_left_button_state){
+    left_pressed = true;
+    time_left = millis();
+  }
 
-  left_button_state = new_left_button_state;
-  right_button_state = new_right_button_state;
-}
+  if(new_right_button_state){
+    right_pressed = true;
+    time_right = millis();
+  }
 
-void handle_input() {
-  if(left_just_pressed) {
-    if(curr_direction == LEFT) {
-      curr_direction = UP;
-    } else {
-      curr_direction = curr_direction >> 1;
-    }
-  } else if (right_just_pressed) {
-    if(curr_direction == UP) {
-      curr_direction = LEFT;
-    } else {
-      curr_direction = curr_direction << 1;
-    }
+  if((curr_direction == RIGHT) && (left_pressed) && (((millis() - time_left) > 10))) {
+    curr_direction = UP;
+    left_pressed = false;
+  } 
+
+  if ((curr_direction == UP) && (left_pressed)  && (((millis() - time_left) > 10))) {
+    curr_direction = LEFT;
+    left_pressed = false;
+  }
+
+  if((curr_direction == LEFT) && (right_pressed) && (((millis() - time_right) > 10))) {
+    curr_direction = DOWN;
+    right_pressed = false;
+  }
+  
+  if((curr_direction == DOWN) && (right_pressed) && (((millis() - time_right) > 10))) {
+    curr_direction = RIGHT;
+    right_pressed = false;
   }
 }
 
 void loop() {
 
   update_input();
-  handle_input();
 
-  unsigned long time = millis();
+  unsigned long time = millis() /3;
   unsigned long elapsed = time - last_update;
   last_update = time;
   time_since_last_draw += elapsed;
